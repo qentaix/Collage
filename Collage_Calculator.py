@@ -8,7 +8,13 @@ import glob
 import threading
 import copy
 from tqdm import tqdm
-from itertools import islice
+
+"""""
+Libraries required to run this code ( in the form of commands to install them ):
+pip install Pillow
+pip install numpy
+pip install tqdm
+"""""
 
 """""
 IMPORTANT NOTICE: This Code can have pretty heavy usage of the disk on which you store the images. Furthermore,
@@ -19,15 +25,14 @@ large, especially if you utilise the advanced compare function.
 
     As to refer to quality of generated collages. It directly depends on four factors:
 1. How many images You have downloaded
-2. The resolution the downoaded images
+2. The resolution of the downloaded images
 3. The Horizontal resolution you set for the collage
-4. Whether you use simple or advanced mode.
     Anything posted by me ( u/QentaiX ) on reddit was most likely generated with my library of ~80,000 images
-all in resolution of 64x64. For similar results you can simulate my workspace by downloding similar amount of images
-in the same resolution. If the output quality still does not satisfy your needs, contact me and I might be able to see
-what I can do to improve it. Thank You!
+all in resolution of 64x64, sometimes downscaled to 32x32. For similar results you can simulate my workspace 
+by downloding similar amount of images in the same resolution. If the output quality still does not satisfy 
+your needs, contact me and I might be able to see what I can do to improve it. Thank You!
 
-    For anybody who may be reading this and does not know Python very well... First of all thank you!
+    For anybody who may be reading this and is relatively new to Python... First of all, thank you!
 It is a great achievement for me to have a chance to have my code potentially help somebody. For You,
 I would recommend reading the code from top to bottom as processing steps are roughly sorted that way
 and understanding every next step might not be as easy without knowing how the previous part works.
@@ -38,45 +43,60 @@ does not satisfy you I can try to help as much as I can.
 """""
 
 def Calculate_Averages(Image):
+
     #Converting a PIL 'Image' into an array to calculate the average values.
     Numpy_Array = numpy.array(Image.convert("RGB"))
+
     #Setting the values for Total amount of Red, Green and Blue.
     Red_Total = 0
     Green_Total = 0
     Blue_Total = 0
+
     #Pixel count defines by how much we will need to divide the sum. It is just width * height of array
     Pixel_Count = Numpy_Array.shape[0] * Numpy_Array.shape[1]
+
     #Check if the array has appropriate dimensions, otherwise image can break the upcoming code
     if(len(Numpy_Array.shape)==3):
+
         #Check again just to be sure that the colors came properly in 3 channels
         if(Numpy_Array.shape[2] == 3):
+
             #Cut out segments of an array 
             Red_Cut = Numpy_Array[:,:,0]
             Green_Cut = Numpy_Array[:,:,1]
             Blue_Cut = Numpy_Array[:,:,2]
+
             #Reshape the segments into 1-dimensional arrays
             Red_Channel = numpy.resize(Red_Cut, Pixel_Count)
             Green_Channel = numpy.resize(Green_Cut, Pixel_Count)
             Blue_Channel = numpy.resize(Blue_Cut, Pixel_Count)
+
             #Get the sums of these arrays
             Red_Total = sum(Red_Channel)
             Green_Total = sum(Green_Channel)
             Blue_Total = sum(Blue_Channel)
+
         else:
+
+            #This doesn't really ever trigger since a few other changes but it doesn't slow down the code so I left it in
             print('Broken Image')
             return (-999, -999, -999)
+
         #Now we can start calculating the averages. We can just divide the totals by the amount of pixels accounted
         Red_Average = Red_Total / Pixel_Count
         Green_Average = Green_Total / Pixel_Count
         Blue_Average = Blue_Total / Pixel_Count
+
         #We can now build these three into a tuple for some of the further calcculations. Lets call it 'RGB Average'.
         RGB_Average = (Red_Average, Green_Average, Blue_Average)
+
         #Return our RGB Average from the function
         return RGB_Average
     else:
+
+        #This doesn't really ever trigger since a few other changes but it doesn't slow down the code so I left it in
         print('Broken Image')
         return (-999, -999, -999)
-
 
 
 """""
@@ -85,10 +105,12 @@ sets the amount of squares that the image will be horizontally. Remember that ea
 separate image and the total size / resolution of the image can scale up pretty quickly.
 """""
 def Segment_Image(Image_, Horizontal_Resolution):
+
     #Before we start any calculations, let's get the size of the image.
     Dimensions = Image_.size
     Width = Dimensions[0]
     Height = Dimensions[1]
+
     #We need for each square to be equal in size and have an integer amount of pixels so our first step is to
     #Resize and slightly crop the image in such a way that lets us build it from squares.
     #Wht we need to do now is first resize the image in such a way that the width is divisible by the Horizontal
@@ -96,56 +118,69 @@ def Segment_Image(Image_, Horizontal_Resolution):
     #an integer. After that we will know the preferred resolution for every square.
     Raw_Segment_resolution = Width / Horizontal_Resolution
     Preferred_Segment_Resolution = int(Raw_Segment_resolution)
+
     #Now we can go backwards and multiply the Preferred resolution by the Horizontal_resolution
     #in order to get the optimal width value.
     Optimal_Width = Preferred_Segment_Resolution * Horizontal_Resolution
+
     #We can now divide the Height by our old width and multiply by the new one. That way we can get the
     #value for the height that will keep the aspect ratio constant after resizing the image
     Matching_Height = Height / Width * Optimal_Width
+
     #Don't forget to make it and integer as resize doesn't like floats
     Matching_Height = int(Matching_Height)
+
     #We can now resize the image to this new size
     Resized = Image_.resize((Optimal_Width, Matching_Height))
+
     #After resizing we have to deal with the fact that the hight still cannot be split into squares with thiss resolution.
     #Sadly the best solution is to cut off a few rows fom the bottom as 
     #adding rows with other colors will tamper with our calculations.
     #We will go through a similar procedure, now diving the height by the resolution of single square.
     Vertical_Squares = Matching_Height / Preferred_Segment_Resolution
+
     #We can now floor the value ( round down ) to get how many squares should fit into the height
     Optimal_Vertical_Squares = math.floor(Vertical_Squares)
+
     #And multiply the amount with the resolution of a single square to get the largest height that is
     #both smaller than our current one and divisible by the Square Resolution
     Optimal_Height = Optimal_Vertical_Squares * Preferred_Segment_Resolution
+
     #We can now make a 'box' tuple to specify which part of the image we want to be left in after the crop.
     Cropping_Box = (0, 0, Optimal_Width, Optimal_Height)
+
     #Now we crop the image
     Cropped_Resized = Resized.crop(Cropping_Box)
+
     #We can now start the second step - the process of splitting the image into segments.
     #This will be a list where we store our segments
     #We initialize every segment as a 'NoneType' to not give it any strict
     #vallues before the correct ones are provided.
     Segments = []
+
     #Let's start a loop for the amount of horizontal segments we have
     for Horizontal in range(Horizontal_Resolution):
+
         #Now for the amount of segments we have vertically
         Segments.append([])
         for Vertical in range(Optimal_Vertical_Squares):
+
             #Now we can set a box parameter for the current segment we are 'Extracting'
             Left = Horizontal*Preferred_Segment_Resolution
             Top = Vertical*Preferred_Segment_Resolution
             Right = (Horizontal+1)*Preferred_Segment_Resolution
             Bottom = (Vertical+1)*Preferred_Segment_Resolution
             Segment_Box = (Left, Top, Right, Bottom)
+
             #Now we crop our the segment
             Segment = Cropped_Resized.crop(Segment_Box)
-            #Segment.show()
-            #time.sleep(1)
+
             #And sent it to the correct place in our 'Segments' list
             Segments[Horizontal].append(Segment)
             Segment = None
+
     #Now we have all the segments and so can return them
     return Segments
-
 
 
 """""
@@ -156,24 +191,33 @@ in the same folder in a form of a .json file.
 def Get_Folder_Averages(Directory):
 
     print("Getting Average RGB values for Images")
+
     #We first get the list of all th files in the folder ('*' is added as it points to all files )
     Files = glob.glob(Directory+'*')
+
     #We can now create a dictionary that will store all of our averages
     Averages = {}
+
     #Net step is to iterate through every file in the list that we have obtained
     for File_ in tqdm(Files):
+
         #Just to be sure it is an image
         if(File_.endswith('.png')):
+
             #Load the file as an 'Image' object
             Image_ = Image.open(File_)
+
             #Get the average
             RGB_Average = Calculate_Averages(Image_)
+
             #Now for the 'name' of the entry under which we will store the averages we have to get the id of the image.
             #The id is the name of the image, but to extract it we need to remove the rest of the path
             No_Path = File_.removeprefix(Directory)
             No_Path_And_Filetype = No_Path.removesuffix('.png')
+
             #Now that we have the id of the image as a string ( just like we want it ), we can add it to the dictionary
             Averages[No_Path_And_Filetype] = RGB_Average
+
             #Due to a large amount of images being loaded, it is better to be safe and close the ones we finished working with
             Image_.close()
 
@@ -181,17 +225,18 @@ def Get_Folder_Averages(Directory):
     #We can do that easier with the help of 'json' module.
     #Creating the path
     Json_File_Path = Directory + 'Image_Averages.json'
+
     #Opening the file
     with open(Json_File_Path, 'w') as Write_File:
+
         #Dump the json data
         json.dump(Averages, Write_File)
-        #pass
+    
     #We do not need to close anything because we used 'with' and not just 'open'.
     #After everything that goes into the indented area of the 'with' statement is comlete,
     #the file closes automatically
     #We can now just return 0 as a way of saying that the function comleted without errors
     return 0
-
 
 
 """""
@@ -225,11 +270,13 @@ class Simple_Compare_Find():
     """""
     Main function for the generation of a collage
     """""
-    def Make_Collage(self, Image_, Output_Dir,Horizontal_Resolution, Sub_Image_Resolution, Sub_Image_Downscale_Factor = 1):
+    def Make_Collage(self, Image_, Output_Dir,Name,Horizontal_Resolution, Sub_Image_Resolution, Sub_Image_Downscale_Factor = 1):
+
         #Segments the image with one of our previously-written functions
         self.Segments = Segment_Image(Image_, Horizontal_Resolution)
 
-        self.Sauce_File = "SaucePutin.txt"
+        #Setting the directions to the file that woulds store all the Image IDs.
+        self.Sauce_File = Output_Dir + Name +"_Sauce.txt"
 
         #A fancy way to initialize a list with set size. All that is important here is that
         #len(self.Segments[0]) is the vertical size and len(self.Segments) is the horizontal size
@@ -268,8 +315,9 @@ class Simple_Compare_Find():
                 Collage.paste(self.Images_For_Segments[Column][Segment], (Column*math.floor(Sub_Image_Resolution*Sub_Image_Downscale_Factor), Segment*math.floor(Sub_Image_Resolution*Sub_Image_Downscale_Factor)))
 
         #Finally, time to save our collage and return '0' - Mission Accomplished.
-        Collage.save(Output_Dir+'Collageeeeeeeee.png')
+        Collage.save(Output_Dir+'Collagee_'+Name+'.png')
         return 0
+
 
     """""
     An internal function made for the Make_Collage function.
@@ -307,6 +355,7 @@ class Simple_Compare_Find():
                 Best_Distance = Distance
                 Best_ID = Image_
 
+        #Writing Image ID to the Sauce file
         with open(self.Sauce_File, "a") as Sauce:
             Sauce.write("https://www.e621.net/posts/"+Best_ID+"\n")
 
@@ -325,7 +374,32 @@ class Simple_Compare_Find():
         #Finally close the image after taking copy of it, again not to overflow PIL
         im.close()
 
+
+#Finally we start our main function
 if(__name__ == '__main__'):
-    Image_ = Image.open('put.jfif')
-    Collage_Generator = Simple_Compare_Find('C:\\Users\\qenta\\ImTet\\')
-    Collage_Generator.Make_Collage(Image_, '', 96, 64, 0.5)
+
+    #Load The Image that we want to turn into a collage
+    Image_ = Image.open('C:\\PATH\\TO\\YOUR\\IMAGE.png')
+
+    #Initialise the class with our image path
+    Collage_Generator = Simple_Compare_Find('C:\\PATH\\TO\\YOUR\\FOLDER\\WITH\\IMAGES\\')
+
+    #This is the folder where the collage and file with sauce will go
+    Output_Folder = "C:\\PATH\\TO\\YOUR\\OUTPUT\\FOLDER\\"
+
+    #This is the name that the collage filename will include
+    Name = "Collage"
+
+    #This is the width that the Collage will possess measured in images
+    Width = 64
+
+    #It is important to set this to the side length of your Sub-Images in the folder
+    Sub_Image_Res = 64
+
+    #Relative resolution to that of what is would be with no scaling. Values from 0 to 1 decrease the resolution
+    #While values above 1 increase it though they do not provide extra quality. This is only really created to set
+    #To values like 0.5 to create lighter images that you can actually post to social networks.
+    Scaling_Factor = 1
+
+    #Finally starting the generation
+    Collage_Generator.Make_Collage(Image_, Output_Folder,Name, Width, Sub_Image_Res, Scaling_Factor)
